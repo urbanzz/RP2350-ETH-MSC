@@ -1,15 +1,15 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 320" font-family="'Courier New', Courier, monospace">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 390" font-family="'Courier New', Courier, monospace">
 
   <!-- Background -->
-  <rect width="650" height="320" fill="#0d1117" rx="8"/>
+  <rect width="650" height="390" fill="#0d1117" rx="8"/>
 
   <!-- Title -->
   <text x="325" y="28" text-anchor="middle" fill="#8b949e" font-size="12">
-    WaveShare RP2350-ETH — внутренние соединения RP2350 ↔ CH9120
+    WaveShare RP2350-ETH — внутренние соединения
   </text>
 
   <!-- RP2350 block -->
-  <rect x="20" y="45" width="205" height="235" rx="6" fill="#161b22" stroke="#388bfd" stroke-width="1.5"/>
+  <rect x="20" y="45" width="205" height="290" rx="6" fill="#161b22" stroke="#388bfd" stroke-width="1.5"/>
   <text x="122" y="68"  text-anchor="middle" fill="#388bfd" font-size="14" font-weight="bold">RP2350</text>
   <text x="122" y="83"  text-anchor="middle" fill="#4a6a8a" font-size="10">Cortex-M33 / RISC-V</text>
 
@@ -18,7 +18,7 @@
   <text x="527" y="68"  text-anchor="middle" fill="#da3633" font-size="14" font-weight="bold">CH9120</text>
   <text x="527" y="83"  text-anchor="middle" fill="#7a3030" font-size="10">UART-to-Ethernet</text>
 
-  <!-- ═══ GP20 → RXD  (UART TX, blue, right-pointing) ═══ -->
+  <!-- ═══ GP20 → RXD  (UART TX, blue) ═══ -->
   <text x="210" y="108" text-anchor="end" fill="#79c0ff" font-size="12" font-weight="bold">GP20</text>
   <text x="210" y="121" text-anchor="end" fill="#4a78a0" font-size="10">UART1 TX</text>
   <circle cx="225" cy="112" r="4" fill="#388bfd"/>
@@ -28,7 +28,7 @@
   <text x="440" y="108" fill="#79c0ff" font-size="12" font-weight="bold">RXD</text>
   <text x="440" y="121" fill="#4a78a0" font-size="10">Serial input</text>
 
-  <!-- ═══ GP21 ← TXD  (UART RX, blue, left-pointing) ═══ -->
+  <!-- ═══ GP21 ← TXD  (UART RX, blue) ═══ -->
   <text x="210" y="148" text-anchor="end" fill="#79c0ff" font-size="12" font-weight="bold">GP21</text>
   <text x="210" y="161" text-anchor="end" fill="#4a78a0" font-size="10">UART1 RX</text>
   <circle cx="225" cy="152" r="4" fill="#388bfd"/>
@@ -38,7 +38,7 @@
   <text x="440" y="148" fill="#79c0ff" font-size="12" font-weight="bold">TXD</text>
   <text x="440" y="161" fill="#4a78a0" font-size="10">Serial output</text>
 
-  <!-- ═══ GP17 ← TCPCS  (status, green, left-pointing) ═══ -->
+  <!-- ═══ GP17 ← TCPCS  (status, green) ═══ -->
   <text x="210" y="188" text-anchor="end" fill="#56d364" font-size="12" font-weight="bold">GP17</text>
   <text x="210" y="201" text-anchor="end" fill="#2d6e37" font-size="10">INPUT</text>
   <circle cx="225" cy="192" r="4" fill="#3fb950"/>
@@ -48,7 +48,7 @@
   <text x="440" y="188" fill="#56d364" font-size="12" font-weight="bold">TCPCS</text>
   <text x="440" y="201" fill="#2d6e37" font-size="10">LOW = connected</text>
 
-  <!-- ═══ GP18 → CFG0  (control, orange, right-pointing) ═══ -->
+  <!-- ═══ GP18 → CFG0  (control, orange) ═══ -->
   <text x="210" y="228" text-anchor="end" fill="#ffa657" font-size="12" font-weight="bold">GP18</text>
   <text x="210" y="241" text-anchor="end" fill="#7a4a1e" font-size="10">OUTPUT</text>
   <circle cx="225" cy="232" r="4" fill="#f0883e"/>
@@ -58,7 +58,7 @@
   <text x="440" y="228" fill="#ffa657" font-size="12" font-weight="bold">CFG0</text>
   <text x="440" y="241" fill="#7a4a1e" font-size="10">LOW = config mode</text>
 
-  <!-- ═══ GP19 → RSTI  (control, orange, right-pointing) ═══ -->
+  <!-- ═══ GP19 → RSTI  (control, orange) ═══ -->
   <text x="210" y="268" text-anchor="end" fill="#ffa657" font-size="12" font-weight="bold">GP19</text>
   <text x="210" y="281" text-anchor="end" fill="#7a4a1e" font-size="10">OUTPUT</text>
   <circle cx="225" cy="272" r="4" fill="#f0883e"/>
@@ -68,19 +68,40 @@
   <text x="440" y="268" fill="#ffa657" font-size="12" font-weight="bold">RSTI</text>
   <text x="440" y="281" fill="#7a4a1e" font-size="10">LOW = reset</text>
 
+  <!-- ═══ GP25 → WS2812  (LED, violet) ═══ -->
+  <text x="210" y="308" text-anchor="end" fill="#c9a7ff" font-size="12" font-weight="bold">GP25</text>
+  <text x="210" y="321" text-anchor="end" fill="#6a4a9a" font-size="10">OUTPUT</text>
+  <circle cx="225" cy="312" r="4" fill="#a78bfa"/>
+  <line   x1="225" y1="312" x2="261" y2="312" stroke="#a78bfa" stroke-width="2"/>
+  <polygon points="275,312 261,306 261,318"   fill="#a78bfa"/>
+
+  <!-- WS2812 block -->
+  <rect x="276" y="292" width="155" height="55" rx="6" fill="#161b22" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="353" y="311" text-anchor="middle" fill="#c9a7ff" font-size="12" font-weight="bold">WS2812B</text>
+  <text x="353" y="325" text-anchor="middle" fill="#6a4a9a" font-size="10">GRB, 800 kHz</text>
+  <!-- RGB dots -->
+  <circle cx="316" cy="336" r="5" fill="#cc2222" opacity="0.9"/>
+  <circle cx="332" cy="336" r="5" fill="#22cc22" opacity="0.9"/>
+  <circle cx="348" cy="336" r="5" fill="#2244cc" opacity="0.9"/>
+  <text x="360" y="340" fill="#6a4a9a" font-size="9">R G B</text>
+
   <!-- Legend -->
-  <rect x="20" y="294" width="610" height="22" rx="3" fill="#161b22"/>
+  <rect x="20" y="360" width="610" height="22" rx="3" fill="#161b22"/>
 
-  <line   x1="35"  y1="305" x2="55"  y2="305" stroke="#388bfd" stroke-width="2"/>
-  <polygon points="65,305 55,300 55,310"  fill="#388bfd"/>
-  <text x="70"  y="309" fill="#6e7681" font-size="11">UART данные</text>
+  <line   x1="35"  y1="371" x2="55"  y2="371" stroke="#388bfd" stroke-width="2"/>
+  <polygon points="65,371 55,366 55,376"  fill="#388bfd"/>
+  <text x="70"  y="375" fill="#6e7681" font-size="11">UART данные</text>
 
-  <line   x1="220" y1="305" x2="240" y2="305" stroke="#3fb950" stroke-width="2"/>
-  <polygon points="210,305 220,300 220,310" fill="#3fb950"/>
-  <text x="245" y="309" fill="#6e7681" font-size="11">TCP статус (вход)</text>
+  <line   x1="185" y1="371" x2="205" y2="371" stroke="#3fb950" stroke-width="2"/>
+  <polygon points="175,371 185,366 185,376" fill="#3fb950"/>
+  <text x="210" y="375" fill="#6e7681" font-size="11">TCP статус (вход)</text>
 
-  <line   x1="400" y1="305" x2="420" y2="305" stroke="#f0883e" stroke-width="2"/>
-  <polygon points="430,305 420,300 420,310" fill="#f0883e"/>
-  <text x="435" y="309" fill="#6e7681" font-size="11">Управление (выход)</text>
+  <line   x1="360" y1="371" x2="380" y2="371" stroke="#f0883e" stroke-width="2"/>
+  <polygon points="390,371 380,366 380,376" fill="#f0883e"/>
+  <text x="395" y="375" fill="#6e7681" font-size="11">Управление (выход)</text>
+
+  <line   x1="535" y1="371" x2="555" y2="371" stroke="#a78bfa" stroke-width="2"/>
+  <polygon points="565,371 555,366 555,376" fill="#a78bfa"/>
+  <text x="570" y="375" fill="#6e7681" font-size="11">LED</text>
 
 </svg>
