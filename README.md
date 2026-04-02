@@ -1,7 +1,7 @@
 # RP2350-ETH MSC → TCP Streaming Bridge
 
 Прошивка для [WaveShare RP2350-ETH](https://www.waveshare.com/wiki/RP2350-ETH).
-Плата эмулирует USB-флешку (FAT12 128 KB), хост пишет `.txt` строки в файл — прошивка читает их в реальном времени и отправляет на TCP-сервер.
+Плата эмулирует USB-флешку (FAT12 160 KB), хост пишет `.txt` строки в файл — прошивка читает их в реальном времени и отправляет на TCP-сервер.
 
 ## Назначение
 
@@ -22,7 +22,7 @@
 | Компонент | Описание |
 |-----------|----------|
 | MCU | RP2350, dual-core Arm Cortex-M33 / RISC-V, 150 MHz |
-| RAM | 520 KB SRAM (128 KB под FAT12-диск) |
+| RAM | 520 KB SRAM (160 KB под FAT12-диск) |
 | Flash | 4 MB |
 | Ethernet | CH9120 (10M, UART-to-TCP/UDP) |
 | USB | USB 2.0 Full Speed (TinyUSB MSC) |
@@ -48,7 +48,7 @@
 Boot
  │
  ├─ CH9120 настраивается как TCP client → SERVER_IP:SERVER_PORT (сохр. в EEPROM)
- ├─ USB MSC монтируется как диск (128 KB FAT12)
+ ├─ USB MSC монтируется как диск (160 KB FAT12)
  ├─ LED: 3 белые вспышки
  │
  └─ IDLE ─── ждём файл на диске
@@ -57,12 +57,15 @@ Boot
       │  Хост создаёт output_data/wc/EVERY_*.txt и начинает писать строки
       ▼
     STREAMING ─── прошивка читает новые строки по мере записи
-      │             LED: быстро зелёный
+      │             LED: мигает градиентом (белый→зелёный→жёлтый→красный)
+      │             во время каждого пакета записи
       │
       │  Каждые WRITE_IDLE_MS=150 мс тишины → читаем новые данные → TCP
       │
-      │  Нет новых данных > STREAM_IDLE_RESET_MS=5000 мс
-      │  (хост закончил сессию или диск заполнился)
+      │  Три сценария выхода из STREAMING:
+      │  1. Диск < 80%, нет записей > 10 с → IDLE (диск не сбрасывается)
+      │  2. Диск ≥ 80%, нет записей > 10 с → DISK RESET (плановый)
+      │  3. Диск ≥ 95% в любой момент     → DISK RESET (аварийный)
       ▼
     DISK RESET ─── disk_init() + media-change уведомление хосту
       │             Хост видит пустой диск, создаёт новый файл
@@ -123,13 +126,14 @@ while True:
 
 | Параметр | Значение |
 |----------|----------|
-| Размер RAM-диска | 256 секторов × 512 байт = **128 KB** |
-| Доступно для данных | ~125 KB (под директории ~2.5 KB) |
+| Размер RAM-диска | 320 секторов × 512 байт = **160 KB** |
+| Data area | (320 − 7) × 512 = **~152 KB** (sector 7+) |
 | Строка данных | 26 байт |
 | При 130 пакетах/мин | ~3380 байт/мин |
-| **Disk reset через** | **~37 минут** |
+| Плановый disk reset (80%) | ~121 KB данных, ~36 мин |
+| Аварийный disk reset (95%) | ~144 KB данных, немедленно |
 
-После reset плата отправляет хосту media-change → Windows видит пустой диск → хост создаёт новый файл → стриминг продолжается автоматически.
+После reset плата отправляет хосту media-change → хост видит пустой диск → создаёт новый файл → стриминг продолжается автоматически.
 
 ## Индикация WS2812 RGB LED
 
@@ -138,8 +142,12 @@ while True:
 | Белый, 3 вспышки | Успешный boot |
 | Синий, медленно 0.5 Гц | IDLE, TCP подключён |
 | Красный, медленно 0.5 Гц | IDLE, нет TCP |
-| Зелёный, быстро 2 Гц | STREAMING — данные идут |
-| Белый, 2 вспышки | Disk reset (смена носителя) |
+| **Мигает 5 Гц во время записи** | STREAMING — физическая запись USB-пакета |
+| — цвет белый | Диск почти пустой (< 33%) |
+| — цвет зелёный | Диск заполнен ~33% |
+| — цвет жёлтый | Диск заполнен ~66% |
+| — цвет красный | Диск заполнен ~95%+ |
+| LED тёмный | STREAMING, между пакетами записи |
 
 ## Конфигурация
 
@@ -157,12 +165,14 @@ while True:
 #define LOCAL_PORT        50000
 
 // RAM-диск
-#define SECTOR_COUNT      256          // 128 KB
+#define SECTOR_COUNT      320          // 160 KB
 #define SECTOR_SIZE       512
 
 // Тайминги
 #define WRITE_IDLE_MS           150    // пауза после последней записи перед обработкой
-#define STREAM_IDLE_RESET_MS    5000   // idle → disk reset
+#define DISK_RESET_FILL_PCT     80     // плановый сброс: 80% + 10 с тишины
+#define STREAM_IDLE_RESET_MS    10000  // окно тишины для планового сброса
+#define DISK_FORCE_RESET_PCT    95     // аварийный сброс: немедленно
 
 // Отладка (отключить в production)
 // #define DEBUG_VERBOSE           // разбор строк: SEND/SKIP/PARSE ERR
@@ -229,18 +239,137 @@ arduino-cli compile \
   RP2350_ETH_MSC.ino
 ```
 
-> **Важно: `-DCFG_TUD_CDC=0`**
-> arduino-pico с TinyUSB по умолчанию добавляет USB CDC (виртуальный COM-порт) в дескриптор
-> автоматически — даже если в коде нет `Serial.begin()`. Без этого флага устройство объявляется
-> хосту как **composite (MSC + CDC)**, что не поддерживается промышленными хостами (VxWorks и др.).
-> Флаг отключает CDC и устройство становится **чистым USB MSC**.
-
 ### Прошивка (UF2)
 
 1. Зажать кнопку **BOOTSEL**, подключить USB
 2. Плата появится как диск `RP2350` в проводнике
 3. Скопировать `build/RP2350_ETH_MSC.ino.uf2` на этот диск
 4. Плата перезагрузится и запустит прошивку
+
+---
+
+## Совместимость с промышленными хостами (VxWorks)
+
+### Проблема: composite USB device
+
+По умолчанию arduino-pico с TinyUSB добавляет USB CDC (виртуальный COM-порт) в дескриптор
+автоматически — даже если в коде нет `Serial.begin()`. В результате устройство объявляется
+как **composite (MSC + CDC)** с `bDeviceClass=0xEF` (IAD).
+
+Промышленные хосты под VxWorks принимают только **чистый MSC** (`bDeviceClass=0x00`).
+При виде composite-дескриптора они молча игнорируют устройство.
+
+**Решение: флаг `-DCFG_TUD_CDC=0`** при компиляции.
+
+Это также требует трёх патчей в `Adafruit_TinyUSB_Library` (файлы в `Documents/Arduino/libraries`):
+
+| Файл | Патч |
+|------|------|
+| `Adafruit_TinyUSB.h` | Добавить `extern "C"` к `TinyUSB_Device_Init` — иначе линкер падает с ошибкой C/C++ linkage при CDC=0 |
+| `Adafruit_TinyUSB_API.cpp` | Обернуть `tud_cdc_n_write_flush` в `#if CFG_TUD_CDC` |
+| `Adafruit_USBD_Device.cpp` | Обернуть `SerialTinyUSB.begin()` и установку `bDeviceClass=TUSB_CLASS_MISC` в `#if CFG_TUD_CDC` / `#else bDeviceClass=0x00` |
+
+---
+
+## Клонирование USB-дескриптора рабочей флешки
+
+Промышленный хост (VxWorks) мог отклонять устройство по несовпадению USB-дескриптора.
+Для максимальной совместимости был снят полный профиль рабочей FAT12-флешки (VendorCo),
+которую хост гарантированно принимает, и дескриптор RP2350 клонирован под неё.
+
+### Сравнение lsusb (Linux) до и после клонирования
+
+| Поле | VendorCo (эталон) | RP2350 (итог) |
+|------|-------------------|---------------|
+| bDeviceClass | 0 | 0 ✓ |
+| idVendor | 0x346d | 0x346d ✓ |
+| idProduct | 0x5678 | 0x5678 ✓ |
+| bcdDevice | 2.00 | 2.00 ✓ |
+| iManufacturer | "USB" | "USB" ✓ |
+| iProduct | "Disk 2.0" | "Disk 2.0" ✓ |
+| bmAttributes | 0x80 | 0x80 ✓ |
+| MaxPower | 100mA | 100mA ✓ |
+| Interface | 8/6/80 (MSC/SCSI/Bulk) | 8/6/80 ✓ |
+| EP OUT | 0x01 | 0x01 ✓ |
+| EP IN | 0x82 | 0x82 ✓ |
+| wMaxPacketSize | 512 (HS) | 64 (FS) — аппаратное ограничение |
+| iSerial | уникальный | chip ID (намеренно) |
+
+### Что пришлось исправить
+
+**`bcdDevice 2.00`** — `TinyUSBDevice.setVersion()` меняет `bcdUSB` (версию протокола USB),
+а не `bcdDevice`. Правильный метод — `TinyUSBDevice.setDeviceVersion(0x0200)`.
+
+**EP IN 0x82 вместо 0x81** — TinyUSB выдаёт эндпоинты последовательно начиная с EP1.
+MSC — единственный интерфейс, поэтому получает EP1 IN (0x81).
+Эталонная флешка использует EP2 IN (0x82).
+Исправление в `Adafruit_USBD_MSC.cpp`: добавить фиктивную аллокацию перед MSC,
+чтобы сдвинуть счётчик:
+```cpp
+(void)TinyUSBDevice.allocEndpoint(TUSB_DIR_IN); // skip EP1 IN → force EP2 IN (0x82)
+uint8_t const ep_in = TinyUSBDevice.allocEndpoint(TUSB_DIR_IN);
+```
+
+**Уникальный серийный номер** — при двух одинаковых клонах на одном Linux-хосте
+`/dev/disk/by-id` конфликтует. Решение: `rp2040.getChipID()` даёт уникальный 64-bit ID.
+
+**`wMaxPacketSize 512 vs 64`** — RP2350 работает в USB Full Speed (64 байт/пакет),
+эталонная флешка High Speed (512 байт/пакет). Аппаратное ограничение, не исправляется.
+
+---
+
+## Совместимость FAT12 BPB
+
+### Проблема
+
+ОС при монтировании читает **BPB (BIOS Parameter Block)** — метаданные в boot-секторе.
+Несоответствие BPB реальной флешке может приводить к отказу монтирования или ошибкам
+при работе с томом на промышленных хостах.
+
+Для отладки был снят hex-дамп рабочей FAT12-флешки (WinImage) на Linux и проведён
+побайтовый анализ boot-сектора.
+
+### Параметры BPB (соответствуют реальной FAT12-флешке WinImage)
+
+```
+OEM Name:         "MSDOS5.0"
+Bytes/Sector:     512        (0x0200)
+Sectors/Cluster:  1
+Reserved Sectors: 1
+FAT Count:        2
+Root Entries:     64         (0x0040)  ← было 16, исправлено
+Total Sectors:    320        (0x0140)  ← было 256, исправлено
+Media Byte:       0xF8
+Sectors/FAT:      1
+Sectors/Track:    32         (0x0020)  ← было 63, исправлено
+Heads:            1          (0x0001)  ← было 255, исправлено
+Drive Number:     0x80
+Boot Signature:   0x29       (extended BPB)
+Volume Label:     "NO NAME   "
+FS Type:          "FAT12   "
+Boot Signature:   0x55AA
+```
+
+### Расположение секторов
+
+```
+Sector 0        Boot Record (BPB)
+Sector 1        FAT1
+Sector 2        FAT2
+Sectors 3–6     Root Directory (64 entries × 32 байт = 4 сектора)
+Sectors 7–319   Data (DATA_SECTOR = 7)
+```
+
+### FAT-заголовок
+
+Первые 3 байта каждой FAT-таблицы — зарезервированные записи:
+```
+FAT[0] = 0xFF8  (media byte, packed FAT12)
+FAT[1] = 0xFFF  (end-of-chain, clean / dirty bit = 1)
+Байты: F8 FF FF
+```
+
+---
 
 ## Структура файлов
 
@@ -250,9 +379,11 @@ config.h             — конфигурация
 diagram.svg          — схема внутренних соединений
 test_bridge.py       — тест: writer + TCP сервер
 tcp_monitor.py       — TCP монитор (только слушатель)
+build_fw.bat         — сборка прошивки через arduino-cli
 build.bat            — сборка exe через PyInstaller
 dist/
   test_bridge.exe    — Windows exe (без Python)
   tcp_monitor.exe    — Windows exe (без Python)
 build/               — артефакты сборки (.gitignore)
+  RP2350_ETH_MSC.ino.uf2  — последняя прошивка (tracked)
 ```
