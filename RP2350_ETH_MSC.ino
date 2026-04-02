@@ -734,14 +734,19 @@ void loop() {
         // LED: зелёный быстро — данные пишутся/читаются
         if (flash_color != LED_GREEN) led_flash(255, LED_GREEN, 50, 50, true);
 
-        // Сброс диска: только если заполнен >= DISK_RESET_FILL_PCT %
-        // и нет новых записей дольше STREAM_IDLE_RESET_MS.
-        // Маленькие файлы (< порога) не вызывают сброс.
         #define DISK_DATA_BYTES ((uint32_t)(SECTOR_COUNT - DATA_SECTOR) * SECTOR_SIZE)
-        if (!g_write_pending &&
-            g_processed_bytes >= (DISK_DATA_BYTES * DISK_RESET_FILL_PCT / 100) &&
-            millis() - g_last_write_ms > STREAM_IDLE_RESET_MS) {
-            disk_reset();
+        if (!g_write_pending && millis() - g_last_write_ms > STREAM_IDLE_RESET_MS) {
+            if (g_processed_bytes >= (DISK_DATA_BYTES * DISK_RESET_FILL_PCT / 100)) {
+                // Диск >= 80% — сброс носителя
+                disk_reset();
+            } else {
+                // Диск не заполнен — просто уходим в IDLE, файл остаётся
+                state = State::IDLE;
+                g_processed_bytes = 0;
+                g_stream_cluster  = 0;
+                s_line_len        = 0;
+                led_flash(255, tcp_now ? LED_BLUE : LED_RED, 500, 500, true);
+            }
             break;
         }
 
