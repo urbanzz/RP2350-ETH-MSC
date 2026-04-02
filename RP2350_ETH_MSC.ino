@@ -734,9 +734,12 @@ void loop() {
         // LED: зелёный быстро — данные пишутся/читаются
         if (flash_color != LED_GREEN) led_flash(255, LED_GREEN, 50, 50, true);
 
-        // Таймаут: нет новых USB-записей дольше STREAM_IDLE_RESET_MS
-        // → хост закончил сессию или диск заполнен → сброс носителя
-        if (!g_write_pending && g_processed_bytes > 0 &&
+        // Сброс диска: только если заполнен >= DISK_RESET_FILL_PCT %
+        // и нет новых записей дольше STREAM_IDLE_RESET_MS.
+        // Маленькие файлы (< порога) не вызывают сброс.
+        #define DISK_DATA_BYTES ((uint32_t)(SECTOR_COUNT - DATA_SECTOR) * SECTOR_SIZE)
+        if (!g_write_pending &&
+            g_processed_bytes >= (DISK_DATA_BYTES * DISK_RESET_FILL_PCT / 100) &&
             millis() - g_last_write_ms > STREAM_IDLE_RESET_MS) {
             disk_reset();
             break;
