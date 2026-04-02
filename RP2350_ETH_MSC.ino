@@ -105,6 +105,9 @@ static volatile uint32_t g_last_write_ms = 0;
 static uint16_t g_stream_cluster  = 0;   // start cluster текущего файла
 static uint32_t g_processed_bytes = 0;   // сколько байт уже отправлено
 
+// LED write-activity: обновляется в msc_write_cb
+static volatile uint32_t g_led_write_ms = 0;
+
 // Буфер частичной строки (персистентный между вызовами stream_process_new)
 static char    s_line_buf[80];
 static uint8_t s_line_len = 0;
@@ -172,8 +175,9 @@ static int32_t msc_read_cb(uint32_t lba, void* buf, uint32_t bufsize) {
 static int32_t msc_write_cb(uint32_t lba, uint8_t* buf, uint32_t bufsize) {
     if (lba + bufsize / SECTOR_SIZE > SECTOR_COUNT) return -1;
     memcpy(disk + lba * SECTOR_SIZE, buf, bufsize);
-    g_write_pending = true;
-    g_last_write_ms = millis();
+    g_write_pending  = true;
+    g_last_write_ms  = millis();
+    g_led_write_ms   = millis();
     if (state == State::IDLE) state = State::STREAMING;
 #ifdef DEBUG_FS
     uint8_t h = fs_head;
@@ -599,6 +603,35 @@ static void dbg_sendf(const char* fmt, ...) {
 // ================================================================
 // LED (WS2812 RGB)
 // ================================================================
+
+// Градиент по заполнению диска: белый(0%) → зелёный(33%) → жёлтый(66%) → красный(100%)
+static uint32_t write_fill_color() {
+    const uint32_t data_bytes = (uint32_t)(SECTOR_COUNT - DATA_SECTOR) * SECTOR_SIZE;
+    uint8_t pct = (g_processed_bytes == 0) ? 0
+                : (uint8_t)min(100UL, (unsigned long)g_processed_bytes * 100UL / data_bytes);
+    uint8_t r, g, b;
+    if (pct < 33) {
+        // белый → зелёный: убираем R и B, поднимаем G
+        uint8_t t = pct * 255 / 33;
+        r = 0x18 - (uint8_t)((uint16_t)0x18 * t / 255);
+        g = 0x18 + (uint8_t)((uint16_t)0x18 * t / 255);
+        b = 0x18 - (uint8_t)((uint16_t)0x18 * t / 255);
+    } else if (pct < 66) {
+        // зелёный → жёлтый: добавляем R
+        uint8_t t = (pct - 33) * 255 / 33;
+        r = (uint8_t)((uint16_t)0x30 * t / 255);
+        g = 0x30;
+        b = 0;
+    } else {
+        // жёлтый → красный: убираем G
+        uint8_t t = (uint8_t)min(255, (int)(pct - 66) * 255 / 34);
+        r = 0x30;
+        g = 0x30 - (uint8_t)((uint16_t)0x30 * t / 255);
+        b = 0;
+    }
+    return ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
 static void led_set(uint32_t color) {
     pixel.setPixelColor(0, pixel.gamma32(color));
     pixel.show();
@@ -617,6 +650,11 @@ static void led_flash(uint8_t count, uint32_t color, uint16_t on_ms = 100, uint1
 }
 
 static void led_update() {
+    // Физическая запись на диск — приоритетная индикация 250 мс
+    if (millis() - g_led_write_ms < 250) {
+        led_set(write_fill_color());
+        return;
+    }
     if (flash_total == 0) return;
     uint32_t now = millis();
     if (now - led_timer < (uint32_t)(led_state ? flash_on_ms : flash_off_ms)) return;
@@ -731,8 +769,7 @@ void loop() {
         break;
 
     case State::STREAMING:
-        // LED: зелёный быстро — данные пишутся/читаются
-        if (flash_color != LED_GREEN) led_flash(255, LED_GREEN, 50, 50, true);
+        // LED write-activity обрабатывается в led_update() — отдельная логика
 
         #define DISK_DATA_BYTES ((uint32_t)(SECTOR_COUNT - DATA_SECTOR) * SECTOR_SIZE)
         if (!g_write_pending && millis() - g_last_write_ms > STREAM_IDLE_RESET_MS) {
