@@ -780,9 +780,14 @@ void loop() {
         }
 
         #define DISK_DATA_BYTES ((uint32_t)(SECTOR_COUNT - DATA_SECTOR) * SECTOR_SIZE)
+        // Аварийный сброс: диск >= 95% — немедленно, хост пишет без остановки
+        if (g_processed_bytes >= (DISK_DATA_BYTES * DISK_FORCE_RESET_PCT / 100)) {
+            disk_reset();
+            break;
+        }
         if (!g_write_pending && millis() - g_last_write_ms > STREAM_IDLE_RESET_MS) {
             if (g_processed_bytes >= (DISK_DATA_BYTES * DISK_RESET_FILL_PCT / 100)) {
-                // Диск >= 80% — сброс носителя
+                // Диск >= 80% + 10 сек тишины — плановый сброс
                 disk_reset();
             } else {
                 // Диск не заполнен — просто уходим в IDLE, файл остаётся
