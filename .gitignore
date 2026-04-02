@@ -1,4 +1,5 @@
 build/
+!build/*.uf2
 *.elf
 *.map
 __pycache__/
