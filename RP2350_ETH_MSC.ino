@@ -656,9 +656,16 @@ void setup() {
 
     disk_init();
 
-    // USB MSC — запускаем сразу, без ожидания mount.
-    // CH9120 конфигурируется параллельно с USB enumeration.
-    usb_msc.setID("WaveShare", "RP2350-ETH", "1.0");
+    // USB MSC — клон дескриптора рабочей FAT12-флешки (VendorCo 346D:5678).
+    // bDeviceClass=0 уже выставлен патчем Adafruit_USBD_Device (CFG_TUD_CDC=0).
+    TinyUSBDevice.setID(0x346D, 0x5678);
+    TinyUSBDevice.setVersion(0x0200);              // bcdDevice 2.00
+    TinyUSBDevice.setManufacturerDescriptor("USB");
+    TinyUSBDevice.setProductDescriptor("Disk 2.0");
+    TinyUSBDevice.setSerialDescriptor("7945111077179713836");
+    TinyUSBDevice.setConfigurationAttribute(0x80);  // Bus Powered, no Remote Wakeup
+
+    usb_msc.setID("VendorCo", "ProductCode", "2.00"); // SCSI INQUIRY
     usb_msc.setCapacity(SECTOR_COUNT, SECTOR_SIZE);
     usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
     usb_msc.setUnitReady(true);
