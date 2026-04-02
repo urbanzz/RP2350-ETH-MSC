@@ -61,7 +61,7 @@
 
 // ── Отладка ───────────────────────────────────────────────────────
 // DEBUG_VERBOSE: подробный разбор строк (SEND/SKIP/PARSE ERR/FILE stats)
-// #define DEBUG_VERBOSE
+#define DEBUG_VERBOSE
 
 // DEBUG_FS: трейс файловой системы — для анализа поведения хост-устройства.
 // Каждый USB-сектор-запись → в кольцевой буфер → отправляется по TCP:
@@ -74,5 +74,5 @@
 //   FS DIR  sub[0] WC           attr=10 cl=4 sz=0
 //   FS DIR   wc[0] EVERY_2~1TXT attr=20 cl=5 sz=1024
 // Отключить в production — значительный трафик.
-// #define DEBUG_FS
+#define DEBUG_FS
 #define FS_EVT_COUNT  64   // размер кольцевого буфера событий
