@@ -39,11 +39,23 @@
 #include <stdarg.h>
 #include "config.h"
 
-// ── Verbose debug macro (no-op when DEBUG_VERBOSE is not defined) ─
+// ── Verbose debug macro ───────────────────────────────────────────
 #ifdef DEBUG_VERBOSE
   #define DBG_V(...)  dbg_sendf(__VA_ARGS__)
 #else
   #define DBG_V(...)  ((void)0)
+#endif
+
+// ── FS event ring buffer (DEBUG_FS) ──────────────────────────────
+#ifdef DEBUG_FS
+struct FsEvt {
+    uint32_t ms;
+    uint32_t lba;
+    uint16_t sz;
+};
+static FsEvt          fs_evts[FS_EVT_COUNT];
+static volatile uint8_t fs_head = 0;   // write ptr (from write_cb)
+static          uint8_t fs_tail = 0;   // read ptr  (from loop)
 #endif
 
 // ── WS2812 цвета (GRB, dim — не слепит) ─────────────────────────
@@ -128,6 +140,10 @@ static bool     fat12_scan_entries(const uint8_t* entries, int count, TxtFile& o
 static bool     fat12_scan_dir(uint16_t cluster, TxtFile& out);
 static bool     fat12_find_txt(TxtFile& out);
 static void     disk_reset();
+#ifdef DEBUG_FS
+static void     fs_log_drain();
+static void     fs_dump_dirs();
+#endif
 static void     ch9120_raw_cmd(uint8_t cmd, const uint8_t* data, uint8_t len);
 static void     ch9120_cfg_enter();
 static void     ch9120_cfg_exit(bool save_eeprom);
@@ -158,6 +174,11 @@ static int32_t msc_write_cb(uint32_t lba, uint8_t* buf, uint32_t bufsize) {
     g_write_pending = true;
     g_last_write_ms = millis();
     if (state == State::IDLE) state = State::STREAMING;
+#ifdef DEBUG_FS
+    uint8_t h = fs_head;
+    fs_evts[h] = { millis(), lba, (uint16_t)bufsize };
+    fs_head = (uint8_t)((h + 1) % FS_EVT_COUNT);
+#endif
     return (int32_t)bufsize;
 }
 
@@ -208,6 +229,122 @@ static void disk_reset() {
     led_flash_sync(2, LED_WHITE, 80, 80);
     led_flash(255, tcp_connected() ? LED_BLUE : LED_RED, 500, 500, true);
 }
+
+// ================================================================
+// DEBUG_FS — трейс секторов и дамп директорий
+// ================================================================
+#ifdef DEBUG_FS
+
+// Дрейн кольцевого буфера → debug-фреймы по TCP
+static void fs_log_drain() {
+    while (fs_tail != fs_head) {
+        uint8_t i  = fs_tail;
+        fs_tail    = (uint8_t)((i + 1) % FS_EVT_COUNT);
+        uint32_t lba = fs_evts[i].lba;
+        const char* t;
+        uint16_t cl = 0;
+        if      (lba == 0)                               t = "BOOT";
+        else if (lba == FAT1_SECTOR)                     t = "FAT1";
+        else if (lba == FAT2_SECTOR)                     t = "FAT2";
+        else if (lba >= ROOT_SECTOR && lba < DATA_SECTOR) t = "ROOT";
+        else { t = "DATA"; cl = (uint16_t)(lba - DATA_SECTOR + 2); }
+        if (cl)
+            dbg_sendf("FS t=%lu lba=%lu [%s clust=%u] sz=%u",
+                      (unsigned long)fs_evts[i].ms, (unsigned long)lba,
+                      t, cl, fs_evts[i].sz);
+        else
+            dbg_sendf("FS t=%lu lba=%lu [%s] sz=%u",
+                      (unsigned long)fs_evts[i].ms, (unsigned long)lba,
+                      t, fs_evts[i].sz);
+    }
+}
+
+// Форматирует имя 8.3 из записи каталога в строку "XXXXXXXX.EEE"
+static void fmt83(const uint8_t* de, char* out) {
+    uint8_t n = 0;
+    for (uint8_t i = 0; i < 8 && de[i] != ' '; i++) out[n++] = (char)de[i];
+    if (de[8] != ' ') {
+        out[n++] = '.';
+        for (uint8_t i = 8; i < 11 && de[i] != ' '; i++) out[n++] = (char)de[i];
+    }
+    out[n] = '\0';
+}
+
+// Дамп одного сектора директории с префиксом метки
+static void fs_dump_sector(const uint8_t* data, uint16_t count,
+                            const char* label, uint8_t depth) {
+    char indent[5]; uint8_t d = depth < 4 ? depth : 4;
+    for (uint8_t i = 0; i < d; i++) indent[i] = ' '; indent[d] = '\0';
+
+    for (uint16_t i = 0; i < count; i++) {
+        const uint8_t* de = data + i * 32;
+        if (de[0] == 0x00) break;
+        if (de[0] == 0xE5) continue;
+        uint8_t attr = de[11];
+        if (attr == 0x0F) continue;   // LFN — пропускаем
+        if (attr & 0x08) continue;    // volume label
+        char name[14]; fmt83(de, name);
+        uint16_t cl = (uint16_t)(de[26] | ((uint16_t)de[27] << 8));
+        uint32_t sz = (uint32_t)(de[28] | ((uint32_t)de[29] << 8)
+                    | ((uint32_t)de[30] << 16) | ((uint32_t)de[31] << 24));
+        dbg_sendf("FS%s %s[%u] %-12s attr=%02X cl=%u sz=%lu",
+                  indent, label, i, name, attr, cl, (unsigned long)sz);
+    }
+}
+
+// Рекурсивный дамп директорий (2 уровня вглубь)
+static void fs_dump_subdir(uint16_t cluster, const char* label, uint8_t depth) {
+    uint8_t chain = 0;
+    while (cluster >= 2 && cluster < 0xFF8 && chain < 16) {
+        uint32_t sector = DATA_SECTOR + (cluster - 2);
+        if (sector >= SECTOR_COUNT) break;
+        fs_dump_sector(disk + sector * SECTOR_SIZE, SECTOR_SIZE / 32, label, depth);
+        cluster = fat12_next(cluster);
+        chain++;
+    }
+}
+
+// Полный дамп: root + все найденные субдиректории (1 уровень)
+static void fs_dump_dirs() {
+    dbg_send("FS --- DIR DUMP ---");
+    const uint8_t* root = disk + ROOT_SECTOR * SECTOR_SIZE;
+    fs_dump_sector(root, ROOT_ENTRIES, "ROOT", 0);
+
+    // Ищем директории в root и дампим их содержимое
+    for (uint8_t i = 0; i < ROOT_ENTRIES; i++) {
+        const uint8_t* de = root + i * 32;
+        if (de[0] == 0x00) break;
+        if (de[0] == 0xE5 || de[11] == 0x0F || (de[11] & 0x08)) continue;
+        if (!(de[11] & 0x10)) continue;   // только директории
+        uint16_t cl = (uint16_t)(de[26] | ((uint16_t)de[27] << 8));
+        if (cl < 2) continue;
+        char lbl[12]; fmt83(de, lbl);
+        fs_dump_subdir(cl, lbl, 1);
+
+        // Ещё один уровень вглубь
+        uint16_t c2 = cl;
+        uint8_t ch = 0;
+        while (c2 >= 2 && c2 < 0xFF8 && ch < 8) {
+            uint32_t sec = DATA_SECTOR + (c2 - 2);
+            if (sec >= SECTOR_COUNT) break;
+            const uint8_t* sd = disk + sec * SECTOR_SIZE;
+            for (uint8_t j = 0; j < SECTOR_SIZE / 32; j++) {
+                const uint8_t* sde = sd + j * 32;
+                if (sde[0] == 0x00) break;
+                if (sde[0] == 0xE5 || sde[11] == 0x0F || (sde[11] & 0x08)) continue;
+                if (!(sde[11] & 0x10) || sde[0] == '.') continue;
+                uint16_t cl2 = (uint16_t)(sde[26] | ((uint16_t)sde[27] << 8));
+                if (cl2 < 2) continue;
+                char lbl2[12]; fmt83(sde, lbl2);
+                fs_dump_subdir(cl2, lbl2, 2);
+            }
+            c2 = fat12_next(c2); ch++;
+        }
+    }
+    dbg_send("FS --- END DUMP ---");
+}
+
+#endif  // DEBUG_FS
 
 // ================================================================
 // FAT12 — обход цепочки кластеров
@@ -560,6 +697,9 @@ void setup() {
 // ================================================================
 void loop() {
     led_update();
+#ifdef DEBUG_FS
+    fs_log_drain();
+#endif
 
     // Детект смены TCP
     bool tcp_now = tcp_connected();
@@ -622,6 +762,9 @@ void loop() {
                   f.start_cluster, (unsigned long)f.file_size,
                   (unsigned long)g_processed_bytes,
                   (long)f.file_size - (long)g_processed_bytes);
+#ifdef DEBUG_FS
+            fs_dump_dirs();
+#endif
 
             if (f.file_size > g_processed_bytes) {
                 stream_process_new(f.start_cluster, g_processed_bytes, f.file_size);

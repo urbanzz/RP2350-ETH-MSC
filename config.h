@@ -60,10 +60,19 @@
 #define STREAM_IDLE_RESET_MS    5000UL
 
 // ── Отладка ───────────────────────────────────────────────────────
-// Раскомментировать для подробного debug-вывода по TCP:
-//   DBG_V  FILE clust=X size=Y processed=Z new=N
-//   DBG_V  SEND 891318:79.70;891319:79.20
-//   DBG_V  SKIP (заголовок / пустая строка)
-//   DBG_V  PARSE ERR (не удалось разобрать веса)
-// Отключить для production — лишний трафик на 115200 UART.
+// DEBUG_VERBOSE: подробный разбор строк (SEND/SKIP/PARSE ERR/FILE stats)
 // #define DEBUG_VERBOSE
+
+// DEBUG_FS: трейс файловой системы — для анализа поведения хост-устройства.
+// Каждый USB-сектор-запись → в кольцевой буфер → отправляется по TCP:
+//   FS t=1234 lba=1 [FAT1] sz=512
+//   FS t=1236 lba=3 [ROOT] sz=512
+//   FS t=1238 lba=5 [DATA clust=2] sz=512
+// При каждом WRITE_IDLE — дамп директорий:
+//   FS DIR ROOT[0] SYSTEM~1     attr=12 cl=2 sz=0
+//   FS DIR ROOT[2] OUTPUT~1     attr=10 cl=3 sz=0
+//   FS DIR  sub[0] WC           attr=10 cl=4 sz=0
+//   FS DIR   wc[0] EVERY_2~1TXT attr=20 cl=5 sz=1024
+// Отключить в production — значительный трафик.
+// #define DEBUG_FS
+#define FS_EVT_COUNT  64   // размер кольцевого буфера событий
