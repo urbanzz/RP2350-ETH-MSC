@@ -218,15 +218,22 @@ arduino-cli core install rp2040:rp2040 \
   --additional-urls https://github.com/earlephilhower/arduino-pico/releases/download/global/package_rp2040_index.json
 arduino-cli lib install "Adafruit TinyUSB Library" "Adafruit NeoPixel"
 
-# Собрать
+# Собрать (через готовый скрипт, Windows)
+build_fw.bat
+
+# Или вручную — флаг CFG_TUD_CDC=0 обязателен (см. ниже)
 arduino-cli compile \
   --fqbn "rp2040:rp2040:waveshare_rp2350_plus:usbstack=tinyusb" \
+  --build-property "build.extra_flags=-DCFG_TUD_CDC=0" \
   --output-dir build \
   RP2350_ETH_MSC.ino
-
-# Или через готовый скрипт (Windows)
-build.bat
 ```
+
+> **Важно: `-DCFG_TUD_CDC=0`**
+> arduino-pico с TinyUSB по умолчанию добавляет USB CDC (виртуальный COM-порт) в дескриптор
+> автоматически — даже если в коде нет `Serial.begin()`. Без этого флага устройство объявляется
+> хосту как **composite (MSC + CDC)**, что не поддерживается промышленными хостами (VxWorks и др.).
+> Флаг отключает CDC и устройство становится **чистым USB MSC**.
 
 ### Прошивка (UF2)
 
