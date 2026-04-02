@@ -659,7 +659,7 @@ void setup() {
     // USB MSC — клон дескриптора рабочей FAT12-флешки (VendorCo 346D:5678).
     // bDeviceClass=0 уже выставлен патчем Adafruit_USBD_Device (CFG_TUD_CDC=0).
     TinyUSBDevice.setID(0x346D, 0x5678);
-    TinyUSBDevice.setVersion(0x0200);              // bcdDevice 2.00
+    TinyUSBDevice.setDeviceVersion(0x0200);        // bcdDevice 2.00
     TinyUSBDevice.setManufacturerDescriptor("USB");
     TinyUSBDevice.setProductDescriptor("Disk 2.0");
     // Серийник из уникального chip ID — каждая плата уникальна,
