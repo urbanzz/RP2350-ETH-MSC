@@ -769,7 +769,12 @@ void loop() {
         break;
 
     case State::STREAMING:
-        // LED write-activity обрабатывается в led_update() — отдельная логика
+        // Гасим IDLE-мигание (красный/синий) — между записями LED тёмный,
+        // во время записи write_fill_color() показывает градиент.
+        if (flash_total != 0 && (flash_color == LED_RED || flash_color == LED_BLUE)) {
+            flash_total = 0;
+            led_set(LED_OFF);
+        }
 
         #define DISK_DATA_BYTES ((uint32_t)(SECTOR_COUNT - DATA_SECTOR) * SECTOR_SIZE)
         if (!g_write_pending && millis() - g_last_write_ms > STREAM_IDLE_RESET_MS) {
