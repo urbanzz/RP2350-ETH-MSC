@@ -650,9 +650,12 @@ static void led_flash(uint8_t count, uint32_t color, uint16_t on_ms = 100, uint1
 }
 
 static void led_update() {
-    // Физическая запись на диск — приоритетная индикация 250 мс
-    if (millis() - g_led_write_ms < 250) {
-        led_set(write_fill_color());
+    // Физическая запись на диск — мигание 5 Гц, цвет = градиент заполнения.
+    // Окно активности 500 мс после последней записи.
+    // Период мигания по абсолютному времени — не зависит от частоты пакетов.
+    if (millis() - g_led_write_ms < 500) {
+        bool on = ((millis() / 100) % 2) == 0;
+        led_set(on ? write_fill_color() : LED_OFF);
         return;
     }
     if (flash_total == 0) return;
