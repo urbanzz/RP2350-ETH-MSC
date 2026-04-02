@@ -662,7 +662,11 @@ void setup() {
     TinyUSBDevice.setVersion(0x0200);              // bcdDevice 2.00
     TinyUSBDevice.setManufacturerDescriptor("USB");
     TinyUSBDevice.setProductDescriptor("Disk 2.0");
-    TinyUSBDevice.setSerialDescriptor("7945111077179713836");
+    // Серийник из уникального chip ID — каждая плата уникальна,
+    // конфликтов при одновременном подключении нескольких плат нет.
+    static char serial[17];
+    snprintf(serial, sizeof(serial), "%016llX", rp2040.getChipID());
+    TinyUSBDevice.setSerialDescriptor(serial);
     TinyUSBDevice.setConfigurationAttribute(0x80);  // Bus Powered, no Remote Wakeup
 
     usb_msc.setID("VendorCo", "ProductCode", "2.00"); // SCSI INQUIRY
