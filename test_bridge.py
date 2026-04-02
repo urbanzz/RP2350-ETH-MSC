@@ -87,6 +87,28 @@ def writer_thread():
         stop_event.set()
         return
 
+    def new_file():
+        """Создаёт новый лог-файл (вызывается при старте и после disk reset)."""
+        nonlocal fpath, folder
+        fname = f"Every_{datetime.now().strftime('%Y%m%d_%H%M%S')}_.txt"
+        fpath = os.path.join(folder, fname)
+        for attempt in range(10):
+            try:
+                os.makedirs(folder, exist_ok=True)
+                now = datetime.now()
+                with open(fpath, "w", newline="\r\n") as f:
+                    f.write("START PACK WEIGHT LOG   \r\n")
+                    f.write(f"     {now.day}-{now.strftime('%b-%Y  %H:%M')}  \r\n")
+                    f.flush()
+                    os.fsync(f.fileno())
+                log(f"WRITER  new file={fpath}")
+                return True
+            except OSError as e:
+                log(f"WRITER  new_file attempt {attempt+1}: {e}")
+                time.sleep(1.0)
+        log("WRITER  ERROR: cannot create file after 10 attempts")
+        return False
+
     enum_val = START_ENUM
     while not stop_event.is_set():
         time.sleep(WRITE_INTERVAL)
@@ -108,6 +130,13 @@ def writer_thread():
                 os.fsync(f.fileno())
             with stats_lock:
                 stats["written"] += len(rows)
+        except FileNotFoundError:
+            # Диск был сброшен прошивкой (disk reset) — создаём новый файл
+            log("WRITER  disk reset detected, creating new session file...")
+            if not new_file():
+                stop_event.set()
+                return
+            continue
         except OSError as e:
             log(f"WRITER  ERROR append: {e}")
             with stats_lock:
