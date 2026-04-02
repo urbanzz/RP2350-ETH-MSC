@@ -39,6 +39,13 @@
 #include <stdarg.h>
 #include "config.h"
 
+// ── Verbose debug macro (no-op when DEBUG_VERBOSE is not defined) ─
+#ifdef DEBUG_VERBOSE
+  #define DBG_V(...)  dbg_sendf(__VA_ARGS__)
+#else
+  #define DBG_V(...)  ((void)0)
+#endif
+
 // ── WS2812 цвета (GRB, dim — не слепит) ─────────────────────────
 #define LED_OFF     0x000000u
 #define LED_RED     0x300000u   // IDLE, нет TCP
@@ -350,7 +357,10 @@ static bool tcp_wait_connected(uint32_t timeout_ms) {
 // Формат выхода: "891318:79.70;891319:79.20\r\n"
 // Заголовочные строки (не начинаются с цифры) — игнорируются.
 static void parse_and_send_line(const char* line, uint8_t len) {
-    if (len == 0 || line[0] < '0' || line[0] > '9') return;
+    if (len == 0 || line[0] < '0' || line[0] > '9') {
+        DBG_V("DBG_V  SKIP \"%.*s\"", (int)len, line);
+        return;
+    }
 
     uint8_t i = 0;
 
@@ -373,13 +383,17 @@ static void parse_and_send_line(const char* line, uint8_t len) {
         w2[w2n++] = line[i++];
     w2[w2n] = '\0';
 
-    if (w1n == 0 || w2n == 0) return;
+    if (w1n == 0 || w2n == 0) {
+        DBG_V("DBG_V  PARSE ERR \"%.*s\"", (int)len, line);
+        return;
+    }
 
     char out[56];
     int n = snprintf(out, sizeof(out), "%lu:%s;%lu:%s\r\n",
                      (unsigned long)enum_val,      w1,
                      (unsigned long)(enum_val + 1), w2);
     if (n > 0) {
+        DBG_V("DBG_V  SEND %.*s", n - 2, out);  // без \r\n
         CH9120_UART.write((const uint8_t*)out, n);
         CH9120_UART.flush();
     }
@@ -603,6 +617,11 @@ void loop() {
                 s_line_len        = 0;
             }
             g_stream_cluster = f.start_cluster;
+
+            DBG_V("DBG_V  FILE clust=%u size=%lu processed=%lu new=%ld",
+                  f.start_cluster, (unsigned long)f.file_size,
+                  (unsigned long)g_processed_bytes,
+                  (long)f.file_size - (long)g_processed_bytes);
 
             if (f.file_size > g_processed_bytes) {
                 stream_process_new(f.start_cluster, g_processed_bytes, f.file_size);
