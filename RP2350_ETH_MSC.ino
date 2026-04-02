@@ -77,19 +77,20 @@ struct TxtFile {
 };
 
 // ================================================================
-// FAT12 layout (256 секторов × 512 байт = 128 KB):
+// FAT12 layout (320 секторов × 512 байт = 160 KB):
 //   Sector 0      — Boot Record
 //   Sector 1      — FAT1
 //   Sector 2      — FAT2
-//   Sector 3      — Root Directory (32 entries)
-//   Sectors 4–255 — Data
+//   Sectors 3–6   — Root Directory (64 entries × 32 байт = 4 сектора)
+//   Sectors 7–319 — Data
+// BPB соответствует WinImage FAT12: root=64, heads=1, track=32
 // ================================================================
 #define DISK_BYTES    ((uint32_t)SECTOR_COUNT * SECTOR_SIZE)
 #define FAT1_SECTOR   1
 #define FAT2_SECTOR   2
 #define ROOT_SECTOR   3
-#define DATA_SECTOR   5
-#define ROOT_ENTRIES  32
+#define DATA_SECTOR   7
+#define ROOT_ENTRIES  64
 
 // ================================================================
 // Глобальные переменные
@@ -196,12 +197,12 @@ static void disk_init() {
     bs[13] = 0x01;
     bs[14] = 0x01; bs[15] = 0x00;
     bs[16] = 0x02;
-    bs[17] = 0x20; bs[18] = 0x00;
-    bs[19] = 0x00; bs[20] = 0x01;
-    bs[21] = 0xF8;
-    bs[22] = 0x01; bs[23] = 0x00;
-    bs[24] = 0x20; bs[25] = 0x00;
-    bs[26] = 0x02; bs[27] = 0x00;
+    bs[17] = 0x40; bs[18] = 0x00;  // root entries = 64
+    bs[19] = 0x40; bs[20] = 0x01;  // total sectors = 320 (0x0140)
+    bs[21] = 0xF8;                  // media descriptor = fixed disk
+    bs[22] = 0x01; bs[23] = 0x00;  // sectors per FAT = 1
+    bs[24] = 0x20; bs[25] = 0x00;  // sectors per track = 32
+    bs[26] = 0x01; bs[27] = 0x00;  // heads = 1
     bs[36] = 0x80; bs[38] = 0x29;
     bs[39] = 0x50; bs[40] = 0x23; bs[41] = 0x10; bs[42] = 0x01;
     memcpy(bs + 43, "RP2350-ETH ", 11);

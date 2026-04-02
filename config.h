@@ -48,8 +48,10 @@
 #define WS2812_PIN   25
 
 // ── RAM-диск ─────────────────────────────────────────────────────
-// FAT12: 256 секторов × 512 байт = 128 KB
-#define SECTOR_COUNT      256
+// FAT12: 320 секторов × 512 байт = 160 KB
+// Параметры BPB соответствуют реальной FAT12-флешке (WinImage):
+//   root entries=64, sectors_per_track=32, heads=1, media=0xF8
+#define SECTOR_COUNT      320
 #define SECTOR_SIZE       512
 
 // ── Тайминги ─────────────────────────────────────────────────────
