@@ -203,14 +203,14 @@ static void disk_init() {
     bs[22] = 0x01; bs[23] = 0x00;  // sectors per FAT = 1
     bs[24] = 0x20; bs[25] = 0x00;  // sectors per track = 32
     bs[26] = 0x01; bs[27] = 0x00;  // heads = 1
-    bs[36] = 0x80; bs[38] = 0x29;
+    bs[36] = 0x80; bs[37] = 0x01; bs[38] = 0x29;
     bs[39] = 0x50; bs[40] = 0x23; bs[41] = 0x10; bs[42] = 0x01;
     memcpy(bs + 43, "RP2350-ETH ", 11);
     memcpy(bs + 54, "FAT12   ",   8);
     bs[510] = 0x55; bs[511] = 0xAA;
-    const uint8_t fh[3] = {0xF8, 0xFF, 0xFF};
-    memcpy(disk + FAT1_SECTOR * SECTOR_SIZE, fh, 3);
-    memcpy(disk + FAT2_SECTOR * SECTOR_SIZE, fh, 3);
+    const uint8_t fh[6] = {0xF8, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    memcpy(disk + FAT1_SECTOR * SECTOR_SIZE, fh, 6);
+    memcpy(disk + FAT2_SECTOR * SECTOR_SIZE, fh, 6);
 }
 
 // Сброс диска + уведомление хоста о смене носителя.
