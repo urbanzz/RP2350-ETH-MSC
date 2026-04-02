@@ -1,7 +1,5 @@
 build/
 *.elf
 *.map
-dist/
-build/
 __pycache__/
 *.spec
