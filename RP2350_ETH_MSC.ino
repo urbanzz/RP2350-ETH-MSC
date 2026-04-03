@@ -130,6 +130,11 @@ static uint32_t boot_ms = 0;
 // TCP prev state для детекции
 static bool dbg_tcp_prev = false;
 
+// Heartbeat: периодически шлём статус независимо от TCP-состояния
+static uint32_t hb_last_ms   = 0;
+static uint32_t hb_scsi_count = 0;  // счётчик SCSI событий с момента boot
+static uint32_t hb_wr_count   = 0;  // счётчик disk write событий
+
 // LED анимация
 static uint32_t led_timer    = 0;
 static bool     led_state    = false;
@@ -211,6 +216,7 @@ static int32_t msc_write_cb(uint32_t lba, uint8_t* buf, uint32_t bufsize) {
     g_last_write_ms  = millis();
     g_led_write_ms   = millis();
     if (state == State::IDLE) state = State::STREAMING;
+    hb_wr_count++;
 #ifdef DEBUG_FS
     uint8_t h = fs_head;
     fs_evts[h] = { millis(), lba, (uint16_t)bufsize };
@@ -232,6 +238,7 @@ void msc_debug_hook(uint8_t event, uint32_t param) {
     uint8_t h = scsi_head;
     scsi_evts[h] = { millis(), event, param };
     scsi_head = (uint8_t)((h + 1) % SCSI_EVT_COUNT);
+    hb_scsi_count++;
 }
 
 static void scsi_log_drain() {
@@ -843,6 +850,21 @@ void loop() {
 #ifdef DEBUG_SCSI
     scsi_log_drain();
 #endif
+
+    // Heartbeat: каждые 5 сек шлём статус независимо от TCP-состояния.
+    // Если received=0 в tcp_monitor даже после этого → CH9120 не пробрасывает UART→TCP.
+    {
+        uint32_t now = millis();
+        if (now - hb_last_ms >= 5000) {
+            hb_last_ms = now;
+            dbg_sendf("HB: usb=%d tcp=%d scsi=%lu wr=%lu t=%lu",
+                      (int)TinyUSBDevice.mounted(),
+                      (int)tcp_connected(),
+                      (unsigned long)hb_scsi_count,
+                      (unsigned long)hb_wr_count,
+                      (unsigned long)now);
+        }
+    }
 
     // Детект смены TCP
     bool tcp_now = tcp_connected();
