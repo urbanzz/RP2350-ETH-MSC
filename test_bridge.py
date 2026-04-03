@@ -59,37 +59,84 @@ def rnd_weight():
     return round(WEIGHT_BASE + random.uniform(-WEIGHT_JITTER, WEIGHT_JITTER), 2)
 
 # -- Writer thread -----------------------------------------------------
+def wait_for_drive(drive: str, timeout: float = 300.0) -> bool:
+    """Ждёт появления диска (до timeout секунд). Возвращает True когда доступен."""
+    log(f"WRITER  waiting for drive {drive} ...")
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if stop_event.is_set():
+            return False
+        if os.path.isdir(drive):
+            log(f"WRITER  drive {drive} ready")
+            return True
+        time.sleep(1.0)
+    log(f"WRITER  ERROR: drive {drive} not appeared in {timeout:.0f}s")
+    return False
+
+
+def find_existing_txt(folder: str):
+    """Ищет существующий непустой .txt файл. Возвращает путь или None."""
+    try:
+        files = [
+            os.path.join(folder, f)
+            for f in os.listdir(folder)
+            if f.lower().endswith(".txt")
+        ]
+        # Сортируем по времени модификации — берём самый новый
+        files = sorted(files, key=lambda p: os.path.getmtime(p))
+        for fpath in reversed(files):
+            if os.path.getsize(fpath) > 0:
+                return fpath
+    except OSError:
+        pass
+    return None
+
+
 def writer_thread():
-    folder = os.path.join(DRIVE, "output_data", "wc")
-    fname  = f"Every_{datetime.now().strftime('%Y%m%d_%H%M%S')}_.txt"
-    fpath  = os.path.join(folder, fname)
-
     log(f"WRITER  drive={DRIVE}  interval={WRITE_INTERVAL}s  lines/write={LINES_PER_WRITE}")
-    log(f"WRITER  file={fpath}")
 
-    try:
-        os.makedirs(folder, exist_ok=True)
-    except OSError as e:
-        log(f"WRITER  ERROR mkdir: {e}")
+    if not wait_for_drive(DRIVE):
         stop_event.set()
         return
 
-    try:
-        now = datetime.now()
-        with open(fpath, "w", newline="\r\n") as f:
-            f.write("START PACK WEIGHT LOG   \r\n")
-            f.write(f"     {now.day}-{now.strftime('%b-%Y  %H:%M')}  \r\n")
-            f.flush()
-            os.fsync(f.fileno())
-        log("WRITER  header written, starting log...")
-    except OSError as e:
-        log(f"WRITER  ERROR write header: {e}")
-        stop_event.set()
-        return
+    folder = os.path.join(DRIVE, "output_data", "wc")
+    fpath  = None
+
+    # Проверяем есть ли уже файл на диске — если да, продолжаем append
+    existing = find_existing_txt(folder) if os.path.isdir(folder) else None
+    if existing:
+        fpath = existing
+        log(f"WRITER  found existing file={fpath}, appending")
+    else:
+        # Создаём новый файл с заголовком
+        try:
+            os.makedirs(folder, exist_ok=True)
+        except OSError as e:
+            log(f"WRITER  ERROR mkdir: {e}")
+            stop_event.set()
+            return
+        fname = f"Every_{datetime.now().strftime('%Y%m%d_%H%M%S')}_.txt"
+        fpath = os.path.join(folder, fname)
+        try:
+            now = datetime.now()
+            with open(fpath, "w", newline="\r\n") as f:
+                f.write("START PACK WEIGHT LOG   \r\n")
+                f.write(f"     {now.day}-{now.strftime('%b-%Y  %H:%M')}  \r\n")
+                f.flush()
+                os.fsync(f.fileno())
+            log(f"WRITER  file={fpath}")
+            log("WRITER  header written, starting log...")
+        except OSError as e:
+            log(f"WRITER  ERROR write header: {e}")
+            stop_event.set()
+            return
 
     def new_file():
-        """Создаёт новый лог-файл (вызывается при старте и после disk reset)."""
+        """Создаёт новый лог-файл после disk reset."""
         nonlocal fpath, folder
+        # Ждём пока диск снова появится после media-change
+        if not wait_for_drive(DRIVE):
+            return False
         fname = f"Every_{datetime.now().strftime('%Y%m%d_%H%M%S')}_.txt"
         fpath = os.path.join(folder, fname)
         for attempt in range(10):

@@ -364,10 +364,13 @@ static uint16_t fat12_next(uint16_t cluster) {
 }
 
 // Сканирует записи директории, ищет первый .TXT файл.
+// Сканирует entries и обновляет out если нашли .txt с бо́льшим cluster (= более новый файл).
+// Возвращает true если хоть что-то нашли.
 static bool fat12_scan_entries(const uint8_t* entries, int count, TxtFile& out) {
     auto uc = [](uint8_t c) -> uint8_t {
         return (c >= 'a' && c <= 'z') ? (uint8_t)(c - 32u) : c;
     };
+    bool found = false;
     for (int i = 0; i < count; i++) {
         const uint8_t* de = entries + i * 32;
         if (de[0] == 0x00) break;
@@ -378,22 +381,22 @@ static bool fat12_scan_entries(const uint8_t* entries, int count, TxtFile& out) 
         uint16_t cluster = (uint16_t)(de[26] | ((uint16_t)de[27] << 8));
 
         if (attr & 0x10) {
-            if (cluster >= 2) {
-                if (fat12_scan_dir(cluster, out)) return true;
-            }
+            if (cluster >= 2)
+                if (fat12_scan_dir(cluster, out)) found = true;
         } else {
             if (uc(de[8]) == 'T' && uc(de[9]) == 'X' && uc(de[10]) == 'T') {
                 uint32_t size = (uint32_t)(de[28] | ((uint32_t)de[29] << 8)
                                 | ((uint32_t)de[30] << 16) | ((uint32_t)de[31] << 24));
-                if (size > 0) {
+                // Берём файл с наибольшим cluster — он аллоцирован последним = самый новый
+                if (size > 0 && cluster > out.start_cluster) {
                     out.start_cluster = cluster;
                     out.file_size = size;
-                    return true;
+                    found = true;
                 }
             }
         }
     }
-    return false;
+    return found;
 }
 
 static bool fat12_scan_dir(uint16_t cluster, TxtFile& out) {
@@ -401,16 +404,18 @@ static bool fat12_scan_dir(uint16_t cluster, TxtFile& out) {
     while (cluster >= 2 && cluster < 0xFF8) {
         uint32_t sector = DATA_SECTOR + (cluster - 2);
         if (sector >= SECTOR_COUNT) break;
-        if (fat12_scan_entries(disk + sector * SECTOR_SIZE, SECTOR_SIZE / 32, out))
-            return true;
+        fat12_scan_entries(disk + sector * SECTOR_SIZE, SECTOR_SIZE / 32, out);
         cluster = fat12_next(cluster);
         if (++chain_len > 252) break;
     }
-    return false;
+    return out.start_cluster >= 2;
 }
 
 static bool fat12_find_txt(TxtFile& out) {
-    return fat12_scan_entries(disk + ROOT_SECTOR * SECTOR_SIZE, ROOT_ENTRIES, out);
+    out.start_cluster = 0;
+    out.file_size = 0;
+    fat12_scan_entries(disk + ROOT_SECTOR * SECTOR_SIZE, ROOT_ENTRIES, out);
+    return out.start_cluster >= 2;
 }
 
 // ================================================================
