@@ -802,7 +802,7 @@ void setup() {
     static char serial[17];
     snprintf(serial, sizeof(serial), "%016llX", rp2040.getChipID());
     TinyUSBDevice.setSerialDescriptor(serial);
-    TinyUSBDevice.setConfigurationAttribute(0x80);  // Bus Powered, no Remote Wakeup
+    TinyUSBDevice.setConfigurationAttribute(0xC0);  // Self Powered — VxWorks не ограничивает ток до 100mA при энумерации
 
     usb_msc.setID("VendorCo", "ProductCode", "2.00"); // SCSI INQUIRY
     usb_msc.setCapacity(16777216, SECTOR_SIZE); // анонсируем 8 GB (как реальная VendorCo флешка)
