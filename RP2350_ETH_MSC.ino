@@ -167,7 +167,17 @@ static void     led_flash_sync(uint8_t count, uint32_t color, uint16_t on_ms, ui
 // USB MSC callbacks
 // ================================================================
 static int32_t msc_read_cb(uint32_t lba, void* buf, uint32_t bufsize) {
-    if (lba + bufsize / SECTOR_SIZE > SECTOR_COUNT) return -1;
+    // За пределами RAM-диска возвращаем нули (хост видит пустое пространство 8 GB)
+    if (lba >= SECTOR_COUNT) {
+        memset(buf, 0, bufsize);
+        return (int32_t)bufsize;
+    }
+    if (lba + bufsize / SECTOR_SIZE > SECTOR_COUNT) {
+        uint32_t valid = (SECTOR_COUNT - lba) * SECTOR_SIZE;
+        memcpy(buf, disk + lba * SECTOR_SIZE, valid);
+        memset((uint8_t*)buf + valid, 0, bufsize - valid);
+        return (int32_t)bufsize;
+    }
     memcpy(buf, disk + lba * SECTOR_SIZE, bufsize);
     return (int32_t)bufsize;
 }
@@ -716,7 +726,7 @@ void setup() {
     TinyUSBDevice.setConfigurationAttribute(0x80);  // Bus Powered, no Remote Wakeup
 
     usb_msc.setID("VendorCo", "ProductCode", "2.00"); // SCSI INQUIRY
-    usb_msc.setCapacity(SECTOR_COUNT, SECTOR_SIZE);
+    usb_msc.setCapacity(16777216, SECTOR_SIZE); // анонсируем 8 GB (как реальная VendorCo флешка)
     usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
     usb_msc.setUnitReady(true);
     usb_msc.begin();
