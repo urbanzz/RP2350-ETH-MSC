@@ -31,6 +31,11 @@
 #define CH9120_CFG_PIN      18   // GP18 → CH9120 CFG0
 #define CH9120_RST_PIN      19   // GP19 → CH9120 RSTI
 
+// Таймаут ожидания USB-монтирования при boot (мс).
+// CH9120 держится в RESET пока не смонтируется — чтобы не превысить 100mA.
+// VxWorks инициализирует USB-стек медленнее Windows (>10s), поэтому 30s.
+#define USB_MOUNT_TIMEOUT_MS    30000
+
 // Таймаут ожидания TCP-соединения при boot и перед отправкой (мс)
 #define TCP_CONNECT_TIMEOUT_MS  5000
 

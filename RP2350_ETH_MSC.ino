@@ -279,6 +279,21 @@ static void scsi_log_drain() {
 #endif  // DEBUG_SCSI
 
 // ================================================================
+// USB state callbacks
+// Flags set from TinyUSB task context, messages sent from loop().
+// ================================================================
+#define USB_EV_MOUNT    0x01
+#define USB_EV_UMOUNT   0x02
+#define USB_EV_SUSPEND  0x04
+#define USB_EV_RESUME   0x08
+static volatile uint8_t usb_events = 0;
+
+void tud_mount_cb(void)           { usb_events |= USB_EV_MOUNT;   }
+void tud_umount_cb(void)          { usb_events |= USB_EV_UMOUNT;  }
+void tud_suspend_cb(bool /*rwk*/) { usb_events |= USB_EV_SUSPEND; }
+void tud_resume_cb(void)          { usb_events |= USB_EV_RESUME;  }
+
+// ================================================================
 // FAT12 — инициализация
 // ================================================================
 static void disk_init() {
@@ -811,7 +826,7 @@ void setup() {
     static char serial[17];
     snprintf(serial, sizeof(serial), "%016llX", rp2040.getChipID());
     TinyUSBDevice.setSerialDescriptor(serial);
-    TinyUSBDevice.setConfigurationAttribute(0xC0);  // Self Powered
+    TinyUSBDevice.setConfigurationAttribute(0x80);  // Bus Powered (как реальная VendorCo флешка)
 
     usb_msc.setID("VendorCo", "ProductCode", "2.00"); // SCSI INQUIRY
     usb_msc.setCapacity(16777216, SECTOR_SIZE); // анонсируем 8 GB (как реальная VendorCo флешка)
@@ -821,7 +836,7 @@ void setup() {
 
     // Ждём монтирования USB до 10 сек — CH9120 всё ещё в RESET (< 5mA).
     // После mount хост выделил порт → можно поднимать CH9120.
-    for (int i = 0; i < 100 && !TinyUSBDevice.mounted(); i++) delay(100);
+    for (int i = 0; i < (USB_MOUNT_TIMEOUT_MS / 100) && !TinyUSBDevice.mounted(); i++) delay(100);
 
     // Поднимаем CH9120 и настраиваем TCP — теперь хост уже не ограничивает ток.
     digitalWrite(CH9120_RST_PIN, HIGH);
@@ -862,6 +877,16 @@ void loop() {
 #ifdef DEBUG_SCSI
     scsi_log_drain();
 #endif
+
+    // USB state events drain
+    if (usb_events) {
+        uint8_t ev = usb_events;
+        usb_events = 0;
+        if (ev & USB_EV_MOUNT)   dbg_send("USB: MOUNTED");
+        if (ev & USB_EV_UMOUNT)  dbg_send("USB: UNMOUNTED");
+        if (ev & USB_EV_SUSPEND) dbg_send("USB: SUSPEND");
+        if (ev & USB_EV_RESUME)  dbg_send("USB: RESUME");
+    }
 
     // Heartbeat: каждые 5 сек шлём статус независимо от TCP-состояния.
     // Если received=0 в tcp_monitor даже после этого → CH9120 не пробрасывает UART→TCP.
