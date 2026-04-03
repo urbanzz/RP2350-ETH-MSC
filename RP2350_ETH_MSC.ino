@@ -783,10 +783,11 @@ void setup() {
     pixel.setBrightness(255);
     led_set(LED_OFF);
 
-    // Boot alive: 2 коротких тусклых вспышки — RP2350 стартовал.
-    // 0x040404 ≈ 1mA суммарно, не влияет на токовый бюджет USB.
-    led_set(0x040404); delay(80); led_set(LED_OFF); delay(80);
-    led_set(0x040404); delay(80); led_set(LED_OFF);
+    // Boot alive: 2 коротких вспышки белым — RP2350 стартовал.
+    // LED_WHITE = 0x181818, ~6mA, 80ms. Происходит до usb_msc.begin()
+    // и до CH9120 (RST=LOW), поэтому не влияет на USB токовый бюджет.
+    led_set(LED_WHITE); delay(80); led_set(LED_OFF); delay(80);
+    led_set(LED_WHITE); delay(80); led_set(LED_OFF);
 
     pinMode(CH9120_CFG_PIN,   OUTPUT);
     pinMode(CH9120_RST_PIN,   OUTPUT);
