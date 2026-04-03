@@ -827,6 +827,7 @@ void setup() {
     snprintf(serial, sizeof(serial), "%016llX", rp2040.getChipID());
     TinyUSBDevice.setSerialDescriptor(serial);
     TinyUSBDevice.setConfigurationAttribute(0x80);  // Bus Powered (как реальная VendorCo флешка)
+    TinyUSBDevice.setConfigurationMaxPower(50);     // 50mA = 0x19 — как у RP2350 bootloader (VxWorks строго проверяет bMaxPower)
 
     usb_msc.setID("VendorCo", "ProductCode", "2.00"); // SCSI INQUIRY
     usb_msc.setCapacity(16777216, SECTOR_SIZE); // анонсируем 8 GB (как реальная VendorCo флешка)
