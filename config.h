@@ -81,3 +81,9 @@
 // Отключить в production — значительный трафик.
 #define DEBUG_FS
 #define FS_EVT_COUNT  64   // размер кольцевого буфера событий
+
+// DEBUG_SCSI: log all SCSI commands + READ10 LBAs via TCP debug frames.
+// Calls via msc_debug_hook (weak symbol in Adafruit library) and msc_read_cb.
+// Disable in production — one debug frame per USB transaction.
+#define DEBUG_SCSI
+#define SCSI_EVT_COUNT  32   // ring buffer for SCSI command events

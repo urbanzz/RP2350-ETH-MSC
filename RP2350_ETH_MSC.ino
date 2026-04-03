@@ -58,6 +58,18 @@ static volatile uint8_t fs_head = 0;   // write ptr (from write_cb)
 static          uint8_t fs_tail = 0;   // read ptr  (from loop)
 #endif
 
+// ── SCSI event ring buffer (DEBUG_SCSI) ──────────────────────────
+#ifdef DEBUG_SCSI
+struct ScsiEvt {
+    uint32_t ms;
+    uint8_t  cmd;    // SCSI opcode; 0x28=READ10 from msc_read_cb
+    uint32_t lba;    // LBA for READ10; start param for START_STOP; 0 others
+};
+static ScsiEvt          scsi_evts[SCSI_EVT_COUNT];
+static volatile uint8_t scsi_head = 0;
+static          uint8_t scsi_tail = 0;
+#endif
+
 // ── WS2812 цвета (GRB, dim — не слепит) ─────────────────────────
 #define LED_OFF     0x000000u
 #define LED_RED     0x300000u   // IDLE, нет TCP
@@ -148,6 +160,9 @@ static void     disk_reset();
 static void     fs_log_drain();
 static void     fs_dump_dirs();
 #endif
+#ifdef DEBUG_SCSI
+static void     scsi_log_drain();
+#endif
 static void     ch9120_raw_cmd(uint8_t cmd, const uint8_t* data, uint8_t len);
 static void     ch9120_cfg_enter();
 static void     ch9120_cfg_exit(bool save_eeprom);
@@ -167,6 +182,13 @@ static void     led_flash_sync(uint8_t count, uint32_t color, uint16_t on_ms, ui
 // USB MSC callbacks
 // ================================================================
 static int32_t msc_read_cb(uint32_t lba, void* buf, uint32_t bufsize) {
+#ifdef DEBUG_SCSI
+    {
+        uint8_t h = scsi_head;
+        scsi_evts[h] = { millis(), 0x28, lba };
+        scsi_head = (uint8_t)((h + 1) % SCSI_EVT_COUNT);
+    }
+#endif
     // За пределами RAM-диска возвращаем нули (хост видит пустое пространство 8 GB)
     if (lba >= SECTOR_COUNT) {
         memset(buf, 0, bufsize);
@@ -198,6 +220,56 @@ static int32_t msc_write_cb(uint32_t lba, uint8_t* buf, uint32_t bufsize) {
 }
 
 static void msc_flush_cb() {}
+
+// ================================================================
+// SCSI debug hook + drain (DEBUG_SCSI)
+// Overrides the weak symbol defined in Adafruit_USBD_MSC.cpp.
+// Called from USB interrupt context → only touches volatile ring buffer.
+// ================================================================
+#ifdef DEBUG_SCSI
+
+void msc_debug_hook(uint8_t event, uint32_t param) {
+    uint8_t h = scsi_head;
+    scsi_evts[h] = { millis(), event, param };
+    scsi_head = (uint8_t)((h + 1) % SCSI_EVT_COUNT);
+}
+
+static void scsi_log_drain() {
+    while (scsi_tail != scsi_head) {
+        uint8_t  i   = scsi_tail;
+        scsi_tail    = (uint8_t)((i + 1) % SCSI_EVT_COUNT);
+        uint8_t  cmd = scsi_evts[i].cmd;
+        uint32_t lba = scsi_evts[i].lba;
+        const char* nm;
+        switch (cmd) {
+            case 0x00: nm = "TUR";        break;
+            case 0x03: nm = "REQ_SENSE";  break;
+            case 0x12: nm = "INQUIRY";    break;
+            case 0x1A: nm = "MSENSE6";    break;
+            case 0x1B: nm = "START_STOP"; break;
+            case 0x1E: nm = "PREV_ALLOW"; break;
+            case 0x23: nm = "FMT_CAP";    break;
+            case 0x25: nm = "RD_CAP";     break;
+            case 0x28: nm = "READ10";     break;
+            case 0x2A: nm = "WRITE10";    break;
+            case 0x5A: nm = "MSENSE10";   break;
+            default:   nm = NULL;         break;
+        }
+        if (cmd == 0x28)
+            dbg_sendf("SCSI %s lba=%lu t=%lu", nm,
+                      (unsigned long)lba, (unsigned long)scsi_evts[i].ms);
+        else if (cmd == 0x1B)
+            dbg_sendf("SCSI %s start=%lu t=%lu", nm,
+                      (unsigned long)lba, (unsigned long)scsi_evts[i].ms);
+        else if (nm)
+            dbg_sendf("SCSI %s t=%lu", nm, (unsigned long)scsi_evts[i].ms);
+        else
+            dbg_sendf("SCSI CMD=%02X t=%lu", (unsigned)cmd,
+                      (unsigned long)scsi_evts[i].ms);
+    }
+}
+
+#endif  // DEBUG_SCSI
 
 // ================================================================
 // FAT12 — инициализация
@@ -767,6 +839,9 @@ void loop() {
     led_update();
 #ifdef DEBUG_FS
     fs_log_drain();
+#endif
+#ifdef DEBUG_SCSI
+    scsi_log_drain();
 #endif
 
     // Детект смены TCP
