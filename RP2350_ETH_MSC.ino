@@ -787,7 +787,10 @@ void setup() {
     pinMode(CH9120_RST_PIN,   OUTPUT);
     pinMode(CH9120_TCPCS_PIN, INPUT_PULLUP);
     digitalWrite(CH9120_CFG_PIN, HIGH);
-    digitalWrite(CH9120_RST_PIN, HIGH);
+    // CH9120 держим в RESET пока USB не энумерируется.
+    // CH9120 в рабочем режиме потребляет ~60mA — вместе с RP2350 (~90mA)
+    // превышаем лимит 100mA строгих хостов (VxWorks). В reset CH9120 < 5mA.
+    digitalWrite(CH9120_RST_PIN, LOW);
 
     disk_init();
 
@@ -802,7 +805,7 @@ void setup() {
     static char serial[17];
     snprintf(serial, sizeof(serial), "%016llX", rp2040.getChipID());
     TinyUSBDevice.setSerialDescriptor(serial);
-    TinyUSBDevice.setConfigurationAttribute(0xC0);  // Self Powered — VxWorks не ограничивает ток до 100mA при энумерации
+    TinyUSBDevice.setConfigurationAttribute(0xC0);  // Self Powered
 
     usb_msc.setID("VendorCo", "ProductCode", "2.00"); // SCSI INQUIRY
     usb_msc.setCapacity(16777216, SECTOR_SIZE); // анонсируем 8 GB (как реальная VendorCo флешка)
@@ -810,11 +813,14 @@ void setup() {
     usb_msc.setUnitReady(true);
     usb_msc.begin();
 
-    // CH9120 — настройка TCP client (параллельно с USB enumeration)
-    ch9120_setup_tcp();
+    // Ждём монтирования USB до 10 сек — CH9120 всё ещё в RESET (< 5mA).
+    // После mount хост выделил порт → можно поднимать CH9120.
+    for (int i = 0; i < 100 && !TinyUSBDevice.mounted(); i++) delay(100);
 
-    // Ждём монтирования USB (до 5 сек)
-    for (int i = 0; i < 50 && !TinyUSBDevice.mounted(); i++) delay(100);
+    // Поднимаем CH9120 и настраиваем TCP — теперь хост уже не ограничивает ток.
+    digitalWrite(CH9120_RST_PIN, HIGH);
+    delay(300);  // CH9120 startup
+    ch9120_setup_tcp();
 
     // Ждём TCP (до TCP_CONNECT_TIMEOUT_MS)
     led_flash(255, LED_ORANGE, 100, 100, true);
