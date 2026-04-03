@@ -794,6 +794,15 @@ static void led_flash_sync(uint8_t count, uint32_t color, uint16_t on_ms = 150, 
 void setup() {
     boot_ms = millis();
 
+    // Отключаем D+ сразу — до любых дескрипторов и настроек.
+    // main.cpp вызывает TinyUSBDevice.begin() ДО setup(), поэтому к этому
+    // моменту устройство уже видно на шине с дефолтными (неправильными)
+    // дескрипторами Adafruit. VxWorks строгий — один раз перечислил неправильный
+    // дескриптор и не переспрашивает. tud_disconnect() снимает D+ pull-up, хост
+    // видит отключение и сбросит перечисление. tud_connect() вернём после
+    // usb_msc.begin() когда все дескрипторы готовы.
+    tud_disconnect();
+
     pixel.begin();
     pixel.setBrightness(255);
     led_set(LED_OFF);
@@ -834,6 +843,9 @@ void setup() {
     usb_msc.setReadWriteCallback(msc_read_cb, msc_write_cb, msc_flush_cb);
     usb_msc.setUnitReady(true);
     usb_msc.begin();
+    // Все дескрипторы настроены — подключаем D+. Хост увидит корректный
+    // дескриптор с первого перечисления.
+    tud_connect();
 
     // Ждём монтирования USB до 10 сек — CH9120 всё ещё в RESET (< 5mA).
     // После mount хост выделил порт → можно поднимать CH9120.
